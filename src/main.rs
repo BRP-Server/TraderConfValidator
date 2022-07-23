@@ -11,26 +11,47 @@ const PADDING: usize =  60;
 
 fn main() {
     let m = Command::new("trade_config_formatter")
-        .arg(Arg::new("file").index(1).required(true))
+        .arg(Arg::new("file").index(1).required(true).help("Input: The file to be processed"))
+        .arg(Arg::new("output").short('o').required(false).help("Output: The output file, by default overrides the input file"))
+        .arg(Arg::new("dry-run").short('d').required(false).help("Dry Run: If present the command will just check the file is valid"))
         .about("A tool to format DayZ trader config files")
         .get_matches();
 
     let file_path: &String = m.get_one("file").unwrap();
 
-    work(&file_path).unwrap_or_else(|err| {
+    let output_file: &String = m.get_one("output").unwrap_or(file_path);
+
+    let dry = m.is_present("dry-run");
+    work(&file_path, &output_file, dry).unwrap_or_else(|err| {
         stderr().write(format!("\nError processing file: {}\n\n", err).as_bytes()).unwrap();
         process::exit(-1); 
     });
 }
 
-fn work(file_path: &str) -> Result<(), String> {
+fn work(file_path: &str, output_file_path: &str, dry: bool) -> Result<(), String> {
     let contents = read_file(file_path)?;
     let parsed = process_file(contents)?;
 
-    for p in parsed.iter() {
-        println!("{}", p);
+    if !dry {
+        let mut out = String::new();
+        for p in parsed.iter() {
+            out.push_str(&format!("{}\n", p));
+        }
+
+        write_file(output_file_path, &out)?;
     }
+
     Ok(())
+}
+
+fn write_file(file_path: &str, content: &str) -> Result<(), String> {
+    let p = Path::new(file_path);
+    if !p.exists() || !p.is_file() {
+        return Err(format!("The path provided is not valid"))
+    }
+    fs::write(p, content).map_err(|err| {
+        format!("Error writing file: {:?}", err)
+    })
 }
 
 fn read_file(file_path: &str) -> Result<String, String> {
@@ -157,8 +178,13 @@ impl TryFrom<&CSVLine> for CategoryItem {
 
 impl fmt::Display for CategoryItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let class = format!("{},", self.class);
+        let amount = format!("{},", self.amount);
+        let buy_value = format!("{},", self.buy_value);
+        let sell_value = format!("{}", self.sell_value);
         let comment = self.comment.as_ref().map(|c| c.to_string()).unwrap_or_default();
-        write!(f, "        {},{},{},{}{}", self.class, self.amount, self.buy_value, self.sell_value, comment)
+
+        write!(f, "        {:60}{:10}{:10}{:10}{}\n", class, amount, buy_value, sell_value, comment)
     }
 }
 
