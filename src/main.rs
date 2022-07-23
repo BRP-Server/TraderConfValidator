@@ -1,6 +1,6 @@
 #![feature(iter_advance_by)]
 
-use clap::{Arg, Command};
+use clap::{Arg, Command, ArgAction};
 use std::io::{stderr, Write};
 use std::{fs, fmt, process};
 use std::iter::Peekable;
@@ -12,8 +12,20 @@ const PADDING: usize =  60;
 fn main() {
     let m = Command::new("trade_config_formatter")
         .arg(Arg::new("file").index(1).required(true).help("Input: The file to be processed"))
-        .arg(Arg::new("output").short('o').required(false).help("Output: The output file, by default overrides the input file"))
-        .arg(Arg::new("dry-run").short('d').required(false).help("Dry Run: If present the command will just check the file is valid"))
+        .arg(Arg::new("output")
+            .long("output")
+            .short('o')
+            .required(false)
+            .help("Output: The output file, by default overrides the input file")
+            .action(ArgAction::Set)
+        )
+        .arg(Arg::new("dry-run")
+            .long("dry-run")
+            .short('d')
+            .required(false)
+            .help("Dry Run: If present the command will just check the file is valid")
+            .action(ArgAction::SetTrue)
+        )
         .about("A tool to format DayZ trader config files")
         .get_matches();
 
@@ -21,7 +33,7 @@ fn main() {
 
     let output_file: &String = m.get_one("output").unwrap_or(file_path);
 
-    let dry = m.is_present("dry-run");
+    let dry: bool = *m.get_one("dry-run").unwrap_or(&false);
     work(&file_path, &output_file, dry).unwrap_or_else(|err| {
         stderr().write(format!("\nError processing file: {}\n\n", err).as_bytes()).unwrap();
         process::exit(-1); 
@@ -46,9 +58,17 @@ fn work(file_path: &str, output_file_path: &str, dry: bool) -> Result<(), String
 
 fn write_file(file_path: &str, content: &str) -> Result<(), String> {
     let p = Path::new(file_path);
-    if !p.exists() || !p.is_file() {
-        return Err(format!("The path provided is not valid"))
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!("Error creating parent directory of destination file: {}", err)
+        })?;
     }
+    if p.exists() {
+        fs::remove_file(file_path).map_err(|err| {
+            format!("Error deleting destination file: {}", err)
+        })?;
+    }
+
     fs::write(p, content).map_err(|err| {
         format!("Error writing file: {:?}", err)
     })
@@ -555,11 +575,12 @@ fn parse_comment(chars: &mut Peekable<Chars>) -> Result<Option<Comment>, String>
     consume_spaces(chars)?;
 
     let mut msg: String = String::new();
-    for s in chars {
-        match s {
+    while let Some(c) = chars.peek() {
+        match c {
             '\n' | '\r' => break,
-            s => msg.push(s)
+            s => msg.push(*s)
         }
+        chars.next();
     }
 
     Ok(Some(Comment(msg)))
@@ -616,6 +637,14 @@ fn parse_csv_line(chars: &mut Peekable<Chars>) -> Result<Option<CSVLine>, String
             },
             '/' => {
                 comment = parse_comment(chars)?;
+                if comment.is_some() {
+                    value = value.trim().into();
+                    if value.len() > 0 {
+                        values.push(value);
+                    }
+                    break;
+                }
+
             },
             c => {
                 value.push(*c);
@@ -624,7 +653,7 @@ fn parse_csv_line(chars: &mut Peekable<Chars>) -> Result<Option<CSVLine>, String
         };
     }
 
-    if values.is_empty() && comment.is_none() {
+    if values.is_empty() {
         return Ok(None)
     } else {
         Ok(Some(CSVLine { values, comment }))
