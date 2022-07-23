@@ -147,8 +147,8 @@ enum CurrencyToken {
 impl fmt::Display for CurrencyToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CurrencyToken::Comment(c) => write!(f, "{}", c),
-            CurrencyToken::Currency(c) => write!(f, "{}", c)
+            CurrencyToken::Comment(c) => write!(f, "    {}", c),
+            CurrencyToken::Currency(c) => write!(f, "    <Currency> {}", c)
         }
     }
 }
@@ -204,7 +204,7 @@ impl fmt::Display for CategoryItem {
         let sell_value = format!("{}", self.sell_value);
         let comment = self.comment.as_ref().map(|c| c.to_string()).unwrap_or_default();
 
-        write!(f, "        {:60}{:10}{:10}{:10}{}\n", class, amount, buy_value, sell_value, comment)
+        write!(f, "        {:60}{:10}{:10}{:10}{}", class, amount, buy_value, sell_value, comment)
     }
 }
 
@@ -217,8 +217,8 @@ enum CategoryItemToken {
 impl fmt::Display for CategoryItemToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CategoryItemToken::Comment(c) => write!(f, "\t{}", c),
-            CategoryItemToken::CategoryItem(c) => write!(f, "{}", c)
+            CategoryItemToken::Comment(c) => write!(f, "        {}\n", c),
+            CategoryItemToken::CategoryItem(c) => write!(f, "{}\n", c)
         }
     }
 }
@@ -572,12 +572,14 @@ fn parse_comment(chars: &mut Peekable<Chars>) -> Result<Option<Comment>, String>
 
     chars.next();
     chars.next();
-    consume_spaces(chars)?;
 
     let mut msg: String = String::new();
     while let Some(c) = chars.peek() {
         match c {
-            '\n' | '\r' => break,
+            '\n' | '\r' => {
+                msg = msg.trim().into();
+                break
+            },
             s => msg.push(*s)
         }
         chars.next();
@@ -600,7 +602,10 @@ fn parse_line(chars: &mut Peekable<Chars>) -> Result<Line, String> {
             },
             '/' => {
                 comment = parse_comment(chars)?;
-                break;
+                if comment.is_some() {
+                    text = text.trim().into();
+                    break;
+                }
             },
             c => text.push(*c)
         };
